@@ -1,39 +1,11 @@
+mod phoneme;
+
+use phoneme::Phoneme;
+use phoneme::generate_phoneme;
+use phoneme::generate_square_phoneme;
+use phoneme::generate_phoneme_with_harmonics;
+
 use hound;
-use std::f32::consts::PI;
-
-struct Phoneme {
-    f1: f32,
-    f2: f32,
-}
-
-fn generate_sine_wave(frequency: f32, duration: f32, sample_rate: u32) -> Vec<f32> {
-    let sample_count = (duration * sample_rate as f32) as usize;
-    (0..sample_count)
-        .map(|i| {
-            let t = i as f32 / sample_rate as f32;
-            (2.0 * PI * frequency * t).sin()
-        })
-        .collect()
-}
- 
-fn generate_phoneme(
-    formant1: f32,
-    formant2: f32,
-    pitch: f32,
-    duration: f32,
-    sample_rate: u32,
-) -> Vec<f32> {
-    let wave1 = generate_sine_wave(formant1, duration, sample_rate);
-    let wave2 = generate_sine_wave(formant2, duration, sample_rate);
-    let pitch_wave = generate_sine_wave(pitch, duration, sample_rate);
-
-    wave1
-        .iter()
-        .zip(wave2.iter())
-        .zip(pitch_wave.iter())
-        .map(|((&w1, &w2), &p)| (w1 + w2 + p) / 3.0)
-        .collect()
-}
 
 fn write_wav_file(filename: &str, samples: &[f32], sample_rate: u32) {
     let spec = hound::WavSpec {
@@ -63,13 +35,32 @@ fn main() {
     ];
 
     for (symbol, phoneme) in phoneme_map{
-        let waveform = generate_phoneme(
+        // let waveform = generate_phoneme(
+        //     phoneme.f1,
+        //     phoneme.f2,
+        //     pitch,
+        //     duration,
+        //     sample_rate,
+        // );
+        // write_wav_file(&("phonemes/".to_owned() + &symbol.to_owned() + "_phoneme.wav"), &waveform, sample_rate);
+
+        // let waveform = generate_square_phoneme(
+        //     phoneme.f1,
+        //     phoneme.f2,
+        //     pitch,
+        //     duration,
+        //     sample_rate,
+        // );
+        // write_wav_file(&("phonemes/".to_owned() + &symbol.to_owned() + "_square_phoneme.wav"), &waveform, sample_rate);
+
+        let waveform = generate_phoneme_with_harmonics(
             phoneme.f1,
             phoneme.f2,
             pitch,
             duration,
             sample_rate,
+            5,
         );
-        write_wav_file(&("phonemes/".to_owned() + &symbol.to_owned() + "_phoneme.wav"), &waveform, sample_rate);
+        write_wav_file(&("sounds/".to_owned() + &symbol.to_owned() + "_phoneme.wav"), &waveform, sample_rate);
     }
 }
