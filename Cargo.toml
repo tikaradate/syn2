@@ -2,6 +2,3 @@
 name = "syn2"
 version = "0.1.0"
 edition = "2021"
-
-[dependencies]
-hound = "3.5.1"  # For writing WAV files
