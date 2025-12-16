@@ -57,11 +57,6 @@ impl Resonator {
         // y = b0*x + b1*x1 + b2*x2 - a1*y1 - a2*y2
         let y = self.b0 * x + self.b1*self.x1 + self.b2*self.x2 - self.a1*self.y1 - self.a2*self.y2;
         
-        // Shift state:
-        // x2 = x1
-        // x1 = x
-        // y2 = y1
-        // y1 = y
         self.x2 = self.x1;
         self.x1 = x;
         self.y2 = self.y1;
@@ -71,92 +66,77 @@ impl Resonator {
     }
 }
 
+struct LFSource {
+    sample_rate: f32,
+    f0: f32,
+    t0: f32,
+    tp: f32,
+    te: f32,
+    ta: f32,
+    omega_g: f32,
+    alpha: f32,
+    epsilon: f32,
+    phase: f32,
+}
 
+impl LFSource {
+    fn new(sample_rate: f32, f0: f32) -> Self {
+        return LFSource {
+            sample_rate,
+            f0,
+            t0: 0.0,
+            tp: 0.0,
+            te: 0.0,
+            ta: 0.0,
+            omega_g: 0.0,
+            alpha: 0.0,
+            epsilon: 0.0,
+            phase: 0.0,
+        }
+    }
+    fn next_sample(&mut self) -> f32 {
+        self.t0 = 1.0/self.f0;
+        self.tp = 0.4 * self.t0;
+        self.te = 0.57 * self.t0;
+        self.ta = 0.03 * self.t0;
+
+        let t = self.phase * self.t0;
+        let mut e = 0.0;
+        if t < self.te {
+            self.omega_g = PI / self.tp;
+            self.alpha = -self.omega_g / (self.omega_g*self.te).tan();
+            e = (self.alpha*t).exp() * (self.omega_g*t).sin();
+        } else {
+            self.epsilon = 1.0 / self.ta;
+            e = -(- self.epsilon * (t - self.te)).exp();
+        }
+
+        self.phase += 1.0 / (self.sample_rate * self.t0);
+        if self.phase >= 1.0 {
+            self.phase -= 1.0;
+        }
+
+        return e
+    }
+}
 
 fn main() {
-    // let args: Vec<String> = env::args().collect();
-    // if args.len() < 2 {
-    //     eprintln!("usage: wavtool <path.wav>");
-    //     return;
-    // }
-    // let file_path = &args[1];
-
-    // match read_raw_wav(file_path) {
-    //     Ok(wav) => {
-    //         println!("fmt: {:?}", wav.format());
-    //         println!("data bytes: {}", wav.data_bytes().len())
-    //     }
-    //     Err(e) => eprintln!("error: {e}"),
-    // }
-   
-    // sine wave
-    // let sample_rate = 44100.0;
-    // let duration = 1.0;
-    // let freq = 440.0;
-    // let num_samples: u32 = (sample_rate*duration) as u32;
-    // let mut samples = Vec::<i16>::new();
-    // for i in 0..num_samples {
-    //     let time = i as f32 / sample_rate;
-    //     let value = (2.0 * std::f32::consts::PI  * freq * time).sin();
-    //     samples.push((value * 32767.0) as i16);
-    // }
-    // write_wav_pcm16_mono("./sounds/sine.wav", &samples, sample_rate as u32);
-
-    // glottal
-    // let sample_rate = 44100.0;
-    // let duration = 1.0;
-    // let f0 = 100.0;
-    // let period = (sample_rate/f0) as u32;
-    // let num_samples: u32 = (sample_rate*duration) as u32;
-    // let mut samples = Vec::<i16>::new();
-    // for i in 0..num_samples {
-    //     let mut value = 0.0;
-    //     if i % period == 0 {
-    //         value = 1.0;
-    //     }
-    //     samples.push((value * 32767.0) as i16);
-    // }
-    // write_wav_pcm16_mono("./sounds/glottal.wav", &samples, sample_rate as u32);
-
-    // saw
-    // let sample_rate = 44100.0;
-    // let duration = 1.0;
-    // let f0 = 100.0;
-    // let period = (sample_rate/f0) as u32;
-    // let num_samples: u32 = (sample_rate*duration) as u32;
-    // let mut samples = Vec::<i16>::new();
-    // for i in 0..num_samples {
-    //     let value = (i % period) as f32 / period as f32; 
-    //     samples.push(((2.0 * value - 1.0)* 32767.0) as i16);
-    // }
-    // write_wav_pcm16_mono("./sounds/saw.wav", &samples, sample_rate as u32);
-
-    let sample_rate = 44100.0;
+    let sample_rate = 44100.0;   
     let duration = 1.0;
     let f0 = 100.0;
     let period = (sample_rate/f0) as u32;
     let num_samples: u32 = (sample_rate*duration) as u32;
-    let mut samples = Vec::<i16>::new();
-    for i in 0..num_samples {
-        let value = (i % period) as f32 / period as f32; 
-        samples.push(((2.0 * value - 1.0)* 32767.0) as i16);
-    }
-
-
-
-    let mut r1 = Resonator::new(700.0, 130.0, 44100.0);   // F1
-    let mut r2 = Resonator::new(1200.0, 70.0, 44100.0);   // F2
-    let mut r3 = Resonator::new(2600.0, 160.0, 44100.0);  // F3
-
-    let output: Vec<i16> = samples
-        .iter()
-        .map(|&s| {
-            let x = s as f32 / 32767.0;  // back to -1..1
-            let y = r3.process(r2.process(r1.process(x)));
-            (y * 32767.0).clamp(-32767.0, 32767.0) as i16
-        })
+    let mut lf = LFSource::new(sample_rate, f0);
+    let samples_f32: Vec<f32> = (0..num_samples)
+        .map(|_| lf.next_sample())
         .collect();
-    
-    write_wav_pcm16_mono("./sounds/a.wav", &output, sample_rate as u32);
 
+    let max = samples_f32.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+
+    let samples: Vec<i16> = samples_f32
+        .iter()
+        .map(|&s| ((s / max) * 32767.0) as i16)
+        .collect();
+
+    write_wav_pcm16_mono("./sounds/lf.wav", &samples, sample_rate as u32);
 }
