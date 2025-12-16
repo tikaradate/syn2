@@ -213,7 +213,7 @@ pub fn read_raw_wav(file_path: &String) -> Result<Wav, WavError> {
             }
         }
 
-        // If the parser didn’t consume exactly chunk_size bytes (shouldn’t happen), fix/validate here.
+        // if the parser didn’t consume exactly chunk_size bytes (shouldn’t happen), fix/validate here.
         let consumed = fp - payload_start;
         if consumed < size_usize {
             skip_bytes(&bytes, size_usize - consumed, &mut fp)?;
@@ -246,4 +246,78 @@ pub fn read_raw_wav(file_path: &String) -> Result<Wav, WavError> {
         format_chunk: fmt,
         data_chunk: data,
     })
+}
+
+pub fn write_wav_pcm16(path: &str, samples_interleaved: &[i16], sample_rate: u32, num_channels: u16) -> Result<(), WavError> {
+    if num_channels == 0 {
+        return Err(WavError::Invalid("num_channels must be >= 1"));
+    }
+
+    let ch = num_channels as usize;
+    if samples_interleaved.len() % ch != 0 {
+        return Err(WavError::Invalid("samples length not divisible by num_channels"));
+    }
+
+    let bits_per_sample: u16 = 16;
+    let bytes_per_sample: u16 = bits_per_sample / 8;
+    let block_align: u16 = num_channels
+        .checked_mul(bytes_per_sample)
+        .ok_or(WavError::Invalid("block_align overflow"))?;
+
+    let byte_rate: u32 = sample_rate
+        .checked_mul(block_align as u32)
+        .ok_or(WavError::Invalid("byte_rate overflow"))?;
+
+    let num_frames = samples_interleaved.len() / ch;
+
+    let data_size_u64 = (num_frames as u64) * (block_align as u64);
+    if data_size_u64 > u32::MAX as u64 {
+        return Err(WavError::Invalid("data chunk too large"));
+    }
+    let data_size = data_size_u64 as u32;
+
+    let pad = (data_size & 1) as u32;
+    let riff_size = 36u32
+        .checked_add(data_size)
+        .and_then(|x| x.checked_add(pad))
+        .ok_or(WavError::Invalid("riff size overflow"))?;
+
+    let mut buf = Vec::with_capacity(44 + data_size as usize + pad as usize);
+
+    // RIFF header
+    buf.extend_from_slice(b"RIFF");
+    buf.extend_from_slice(&riff_size.to_le_bytes());
+    buf.extend_from_slice(b"WAVE");
+
+    // fmt chunk
+    buf.extend_from_slice(b"fmt ");
+    buf.extend_from_slice(&16u32.to_le_bytes()); // PCM fmt payload size
+    buf.extend_from_slice(&1u16.to_le_bytes());  // audio_format = 1 (PCM)
+    buf.extend_from_slice(&num_channels.to_le_bytes());
+    buf.extend_from_slice(&sample_rate.to_le_bytes());
+    buf.extend_from_slice(&byte_rate.to_le_bytes());
+    buf.extend_from_slice(&block_align.to_le_bytes());
+    buf.extend_from_slice(&bits_per_sample.to_le_bytes());
+
+    // data chunk
+    buf.extend_from_slice(b"data");
+    buf.extend_from_slice(&data_size.to_le_bytes());
+    for &s in samples_interleaved {
+        buf.extend_from_slice(&s.to_le_bytes());
+    }
+    if pad == 1 {
+        buf.push(0);
+    }
+
+    std::fs::write(path, &buf)?;
+    Ok(())
+}
+
+pub fn write_wav_pcm16_mono(path: &str, samples: &[i16], sample_rate: u32) -> Result<(), WavError> {
+    write_wav_pcm16(path, samples, sample_rate, 1)
+}
+
+// samples must be interleaved: [L0,R0,L1,R1,...]
+pub fn write_wav_pcm16_stereo(path: &str, samples_lr: &[i16], sample_rate: u32) -> Result<(), WavError> {
+    write_wav_pcm16(path, samples_lr, sample_rate, 2)
 }
