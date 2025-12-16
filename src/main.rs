@@ -7,6 +7,7 @@ struct Resonator {
     frequency: f32,
     bandwidth: f32,
     sample_rate: f32,
+    theta: f32,
     a1: f32,
     a2: f32,
     b0: f32,
@@ -24,7 +25,7 @@ impl Resonator {
         // R = exp(-π × bandwidth / sample_rate)
         let r = (-PI * bandwidth / sample_rate).exp();
         // θ = 2π × frequency / sample_rate
-        let theta= 2.0*PI * frequency / sample_rate;
+        let theta = 2.0*PI * frequency / sample_rate;
         // Calculate coefficients
         // a1 = -2 × R × cos(θ)
         let a1 = -2.0 * r * theta.cos();
@@ -41,6 +42,7 @@ impl Resonator {
             frequency,
             bandwidth,
             sample_rate,
+            theta,
             a1,
             a2,
             b0,
@@ -63,6 +65,15 @@ impl Resonator {
         self.y1 = y;
 
         return y
+    }
+    fn set_formant(&mut self, frequency: f32, bandwidth: f32) {
+        let r = (-PI * bandwidth / self.sample_rate).exp();
+        self.theta= 2.0*PI * frequency / self.sample_rate;
+        self.a1 = -2.0 * r * self.theta.cos();
+        self.a2 = r*r;
+        self.b0 = 1.0 - r;
+        self.b1 = 0.0;
+        self.b2 = 0.0;
     }
 }
 
@@ -127,16 +138,29 @@ fn main() {
     let period = (sample_rate/f0) as u32;
     let num_samples: u32 = (sample_rate*duration) as u32;
     let mut lf = LFSource::new(sample_rate, f0);
-    let samples_f32: Vec<f32> = (0..num_samples)
-        .map(|_| lf.next_sample())
-        .collect();
+    let mut samples_f32: Vec<f32> = Vec::new();
+    let mut r1 = Resonator::new(700.0, 100.0, sample_rate);
+    let mut r2 = Resonator::new(1200.0, 100.0, sample_rate);
+    for i in 0..num_samples {
+        let progress = i as f32 / num_samples as f32;  // 0.0 → 1.0
+    
+        let f1 = 400.0 + (270.0 - 400.0) * progress;
+        let f2 = 800.0 + (2300.0 - 800.0) * progress;
+        
+        r1.set_formant(f1, 100.0);
+        r2.set_formant(f2, 100.0);
+        
+        let x = lf.next_sample();
+        let y = r2.process(r1.process(x));
+
+        samples_f32.push(y);
+    }
 
     let max = samples_f32.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
-
     let samples: Vec<i16> = samples_f32
         .iter()
         .map(|&s| ((s / max) * 32767.0) as i16)
         .collect();
 
-    write_wav_pcm16_mono("./sounds/lf.wav", &samples, sample_rate as u32);
+    write_wav_pcm16_mono("./sounds/oi.wav", &samples, sample_rate as u32);
 }
